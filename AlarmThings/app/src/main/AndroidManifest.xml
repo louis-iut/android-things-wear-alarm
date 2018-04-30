@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="fr.iut.iem.alarmthings">
 
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application>
         <uses-library android:name="com.google.android.things" />
 

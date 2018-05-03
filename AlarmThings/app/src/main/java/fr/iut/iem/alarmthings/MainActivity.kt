@@ -1,10 +1,16 @@
 package fr.iut.iem.alarmthings
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.ImageReader
 import android.os.Bundle
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
+import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
 
 /**
@@ -31,20 +37,28 @@ import java.io.IOException
 class MainActivity : Activity() {
     companion object {
         private val TAG = MainActivity.toString()
+
         private const val GPIO_PIN_LED = "BCM2"
         private const val GPIO_PIN_SENSOR = "BCM3"
         private const val GPIO_PIN_BUZZER = "BCM4"
+
+        private const val IMAGE_SIZE = 400
     }
 
     private lateinit var ledGpio: Gpio
     private lateinit var sensorGpio: Gpio
     private lateinit var buzzerGpio: Gpio
+    private val cameraManager = CameraManager.instance
+    private lateinit var cameraHandler: Handler
+    private lateinit var cameraThread: HandlerThread
+    private var isDetected = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         setUpGpio()
+        initCamera()
     }
 
     override fun onStart() {
@@ -86,9 +100,11 @@ class MainActivity : Activity() {
     private fun detect() {
         val detector = Runnable {
             while (true) {
-                if (sensorGpio.value) {
+                if (sensorGpio.value && !isDetected) {
+                    isDetected = true
                     Log.i(TAG, sensorGpio.value.toString())
-                    buzz()
+                    //buzz()
+                    runOnUiThread { cameraManager.takePicture()}
                 }
                 sleep(100)
             }
@@ -102,10 +118,10 @@ class MainActivity : Activity() {
             while (true) {
                 // Turn on the LED
                 ledGpio.value = true
-                sleep(300)
+                sleep(1000)
                 // Turn off the LED
                 ledGpio.value = false
-                sleep(300)
+                sleep(1000)
             }
         }
         Thread(ledBlinker).start()
@@ -117,5 +133,38 @@ class MainActivity : Activity() {
         } catch (e: InterruptedException) {
             e.printStackTrace()
         }
+    }
+
+    private fun initCamera() {
+        // Creates new handlers and associated threads for camera
+        cameraThread = HandlerThread("CameraBackground")
+        cameraThread.start()
+        cameraHandler = Handler(cameraThread.looper)
+        cameraManager.initializeCamera(this, cameraHandler, mOnImageAvailableListener)
+    }
+
+    private val mOnImageAvailableListener = ImageReader.OnImageAvailableListener { reader ->
+        val image = reader.acquireLatestImage()
+        // get image bytes
+        val imageBuf = image.planes[0].buffer
+        val imageBytes = ByteArray(imageBuf.remaining())
+        imageBuf.get(imageBytes)
+        image.close()
+
+        bindCameraImage(imageBytes)
+
+    }
+
+    private fun bindCameraImage(imageBytes: ByteArray) {
+        val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+        runOnUiThread({
+            this.camera_view.setImageBitmap(
+                    Bitmap.createScaledBitmap(
+                            bitmap,
+                            IMAGE_SIZE,
+                            IMAGE_SIZE,
+                            false)
+            )
+        })
     }
 }

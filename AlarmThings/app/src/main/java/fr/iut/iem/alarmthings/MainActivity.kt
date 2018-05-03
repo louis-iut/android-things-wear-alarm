@@ -152,7 +152,6 @@ class MainActivity : Activity() {
         image.close()
 
         bindCameraImage(imageBytes)
-
     }
 
     private fun bindCameraImage(imageBytes: ByteArray) {

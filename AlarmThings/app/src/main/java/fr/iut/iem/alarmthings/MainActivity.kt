@@ -10,6 +10,7 @@ import android.os.HandlerThread
 import android.util.Log
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
+import com.google.firebase.database.FirebaseDatabase
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
 

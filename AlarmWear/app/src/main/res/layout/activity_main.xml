@@ -5,21 +5,46 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/dark_grey"
-    android:padding="@dimen/box_inset_layout_padding"
-    tools:context=".MainActivity"
-    tools:deviceIds="wear">
+    tools:context=".MainActivity">
 
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:padding="@dimen/inner_frame_layout_padding"
         app:boxedEdges="all">
 
-        <TextView
-            android:id="@+id/text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/hello_world" />
+        <Button
+            android:id="@+id/activate_alarm_button"
+            android:layout_width="150dp"
+            android:layout_height="40dp"
+            android:layout_gravity="center"
+            android:background="@android:color/holo_green_dark"
+            android:text="Start Alarm" />
+
+        <ImageView
+            android:id="@+id/photo_from_firebase"
+            android:background="@null"
+            android:layout_gravity="center"
+            android:layout_height="240dp"
+            android:layout_width="240dp"
+            />
+
+        <Button
+            android:id="@+id/attack_button"
+            android:layout_width="70dp"
+            android:layout_height="40dp"
+            android:layout_gravity="bottom|left"
+            android:background="@android:color/holo_red_dark"
+            android:text="Attack" />
+
+        <Button
+            android:id="@+id/done_button"
+            android:layout_width="70dp"
+            android:layout_height="40dp"
+            android:layout_gravity="bottom|right"
+            android:background="@android:color/holo_green_dark"
+            android:text="It's OK"
+            />
 
     </FrameLayout>
+
 </android.support.wear.widget.BoxInsetLayout>

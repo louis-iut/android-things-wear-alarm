@@ -4,7 +4,7 @@ abstract class BaseModule {
     protected var run = false
 
     fun on() {
-        if (!run) {
+        if (!isOn()) {
             run = true
             createThread()
         }

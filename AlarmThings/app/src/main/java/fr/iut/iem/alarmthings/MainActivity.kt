@@ -7,9 +7,16 @@ import android.media.ImageReader
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
+import android.util.Base64
 import android.util.Log
 import com.google.android.things.pio.Gpio
 import com.google.android.things.pio.PeripheralManager
+import com.google.firebase.database.*
+import fr.iut.iem.alarmthings.manager.CameraManager
+import fr.iut.iem.alarmthings.module.Buzzer
+import fr.iut.iem.alarmthings.module.Detector
+import fr.iut.iem.alarmthings.module.DetectorListener
+import fr.iut.iem.alarmthings.module.Led
 import kotlinx.android.synthetic.main.activity_main.*
 import java.io.IOException
 
@@ -34,37 +41,63 @@ import java.io.IOException
  *
  */
 
-class MainActivity : Activity() {
+class MainActivity : Activity(), DetectorListener {
+
     companion object {
         private val TAG = MainActivity.toString()
 
+        //Gpio pins
         private const val GPIO_PIN_LED = "BCM2"
         private const val GPIO_PIN_SENSOR = "BCM3"
         private const val GPIO_PIN_BUZZER = "BCM4"
 
+        //Firebase references
+        private const val ATTACK_REF = "attack"
+        private const val DETECTOR_ACTIVATED_REF = "activated"
+        private const val IMAGE_NAME_REF = "imageName"
+
+        //Misc
+        private const val CAMERA_THREAD_NAME = "CameraBackground"
+
         private const val IMAGE_SIZE = 400
     }
 
+    //Gpio pins
     private lateinit var ledGpio: Gpio
     private lateinit var sensorGpio: Gpio
     private lateinit var buzzerGpio: Gpio
-    private val cameraManager = CameraManager.instance
+
+    //Camera
     private lateinit var cameraHandler: Handler
     private lateinit var cameraThread: HandlerThread
-    private var isDetected = false
+
+    //Modules
+    private lateinit var detector: Detector
+    private lateinit var buzzer: Buzzer
+    private lateinit var led: Led
+
+    //Firebase var
+    private lateinit var attackRef: DatabaseReference
+    private lateinit var detectorActivatedRef: DatabaseReference
+
+    //Managers
+    private val cameraManager = CameraManager.instance
+    private var database = FirebaseDatabase.getInstance()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        setUpGpio()
         initCamera()
+        setUpGpio()
+        setUpModules()
+        setUpFirebase()
     }
 
-    override fun onStart() {
-        super.onStart()
-        blinkLED()
-        detect()
+    //Not on UI Thread
+    override fun onDetect() {
+        Log.i(TAG, "Unknow person detected")
+        runOnUiThread { cameraManager.takePicture() }
     }
 
     private fun setUpGpio() {
@@ -74,11 +107,11 @@ class MainActivity : Activity() {
             ledGpio = pioService.openGpio(GPIO_PIN_LED)
             ledGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
 
-            sensorGpio = pioService.openGpio(GPIO_PIN_SENSOR)
-            sensorGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
-
             buzzerGpio = pioService.openGpio(GPIO_PIN_BUZZER)
             buzzerGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
+
+            sensorGpio = pioService.openGpio(GPIO_PIN_SENSOR)
+            sensorGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW)
 
             Log.i(TAG, "Configuring successful")
         } catch (e: IOException) {
@@ -86,58 +119,49 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun buzz() {
-        val buzz = Runnable {
-            Log.i(TAG, "BUUUUUUUZZZZ")
-            buzzerGpio.value = true
-            sleep(50)
-            buzzerGpio.value = false
-            Log.i(TAG, "DONT BUZZ")
-        }
-        Thread(buzz).start()
+    private fun setUpModules() {
+        buzzer = Buzzer(buzzerGpio)
+        led = Led(ledGpio)
+        detector = Detector(sensorGpio, this)
     }
 
-    private fun detect() {
-        val detector = Runnable {
-            while (true) {
-                if (sensorGpio.value && !isDetected) {
-                    isDetected = true
-                    Log.i(TAG, sensorGpio.value.toString())
-                    //buzz()
-                    runOnUiThread { cameraManager.takePicture()}
+    private fun setUpFirebase() {
+        attackRef = database.getReference(ATTACK_REF)
+        attackRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(data: DataSnapshot?) {
+                if (data?.value != null) {
+                    if (data.value as Boolean) {
+                        buzzer.on()
+                        led.on()
+                    } else {
+                        buzzer.off()
+                        led.off()
+                    }
                 }
-                sleep(100)
             }
-        }
 
-        Thread(detector).start()
-    }
+            override fun onCancelled(data: DatabaseError?) {}
+        })
 
-    private fun blinkLED() {
-        val ledBlinker = Runnable {
-            while (true) {
-                // Turn on the LED
-                ledGpio.value = true
-                sleep(1000)
-                // Turn off the LED
-                ledGpio.value = false
-                sleep(1000)
+        detectorActivatedRef = database.getReference(DETECTOR_ACTIVATED_REF)
+        detectorActivatedRef.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(data: DataSnapshot?) {
+                if (data?.value != null) {
+                    if (data.value as Boolean) {
+                        detector.on()
+                    } else {
+                        detector.off()
+                    }
+                }
             }
-        }
-        Thread(ledBlinker).start()
-    }
+            override fun onCancelled(data: DatabaseError?) {}
+        })
 
-    private fun sleep(milliseconds: Int) {
-        try {
-            Thread.sleep(milliseconds.toLong())
-        } catch (e: InterruptedException) {
-            e.printStackTrace()
-        }
     }
 
     private fun initCamera() {
         // Creates new handlers and associated threads for camera
-        cameraThread = HandlerThread("CameraBackground")
+        cameraThread = HandlerThread(CAMERA_THREAD_NAME)
         cameraThread.start()
         cameraHandler = Handler(cameraThread.looper)
         cameraManager.initializeCamera(this, cameraHandler, mOnImageAvailableListener)
@@ -156,6 +180,8 @@ class MainActivity : Activity() {
 
     private fun bindCameraImage(imageBytes: ByteArray) {
         val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+        val dbImage = database.getReference(IMAGE_NAME_REF)
+        dbImage.setValue(Base64.encodeToString(imageBytes, Base64.DEFAULT))
         runOnUiThread({
             this.camera_view.setImageBitmap(
                     Bitmap.createScaledBitmap(
